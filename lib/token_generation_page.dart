@@ -43,9 +43,6 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
         headers: {'Content-Type': 'application/json', 'Authorization': _authToken},
         body: jsonEncode(_requestBody),
       );
-      print(response.request);
-      print(response.headers);
-      print(response.body);
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body) as Map<String, dynamic>;
 
