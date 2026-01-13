@@ -114,7 +114,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         ),
         onWebViewCreated: (controller) {
           _webViewController = controller;
-          
+
           // Add JavaScript handler to listen for camera permission requests
           controller.addJavaScriptHandler(
             handlerName: 'onCameraPermissionRequest',
@@ -124,7 +124,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                 // Handle both Map and direct object
                 dynamic messageData = args[0];
                 Map<String, dynamic>? message;
-                
+
                 if (messageData is Map) {
                   message = messageData as Map<String, dynamic>;
                 } else if (messageData is String) {
@@ -134,10 +134,8 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                     debugPrint('TokenWebViewPage:Failed to parse message: $e');
                   }
                 }
-                
-                if (message != null && message['type'] == 'CAMERA_PERMISSION_REQUEST') {
-                  debugPrint('TokenWebViewPage:CAMERA_PERMISSION_REQUEST received, requesting permission');
-                  debugPrint('TokenWebViewPage:Message details: step=${message['step']}, stepName=${message['stepName']}, trigger=${message['trigger']}');
+
+                if (message != null && message['trigger'] == 'CameraStep') {
                   _requestCameraPermissionIfNeeded();
                 }
               }
@@ -146,7 +144,8 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         },
         onLoadStop: (controller, url) async {
           // Inject JavaScript to listen for postMessage events from the web page
-          await controller.evaluateJavascript(source: '''
+          await controller.evaluateJavascript(
+            source: '''
             (function() {
               console.log('Flutter: Setting up CAMERA_PERMISSION_REQUEST listener');
               
@@ -186,7 +185,8 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                 }
               };
             })();
-          ''');
+          ''',
+          );
         },
         onLoadStart: (controller, url) async {
           final urlString = url.toString();
