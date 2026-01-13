@@ -215,11 +215,82 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             }
           }
         },
+        onPermissionRequest: (controller, request) async {
+          // This handler works for both iOS and Android
+          debugPrint('TokenWebViewPage:onPermissionRequest: resources=${request.resources}, origin=${request.origin}');
+          
+          // Check if camera permission is requested
+          // PermissionResourceType enum values: CAMERA, MICROPHONE, etc.
+          final needsCamera = request.resources.any(
+            (resource) => resource == PermissionResourceType.CAMERA || resource == PermissionResourceType.MICROPHONE,
+          );
+
+          if (needsCamera) {
+            // Check current permission status
+            final cameraStatus = await Permission.camera.status;
+            if (cameraStatus.isGranted) {
+              // Grant the permission request
+              debugPrint('TokenWebViewPage:Granting camera permission to WebView');
+              return PermissionResponse(
+                resources: request.resources,
+                action: PermissionResponseAction.GRANT,
+              );
+            } else if (cameraStatus.isPermanentlyDenied) {
+              // Permission permanently denied - show dialog to open settings
+              debugPrint('TokenWebViewPage:Camera permission permanently denied');
+              if (mounted) {
+                _showPermissionDeniedDialog();
+              }
+              return PermissionResponse(
+                resources: request.resources,
+                action: PermissionResponseAction.DENY,
+              );
+            } else {
+              // Permission not granted, request it now
+              // This handles the case where WebView requests permission before JavaScript message is received
+              debugPrint('TokenWebViewPage:Camera permission not granted, requesting now');
+              final newStatus = await Permission.camera.request();
+              if (newStatus.isGranted) {
+                debugPrint('TokenWebViewPage:Camera permission granted, granting to WebView');
+                return PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.GRANT,
+                );
+              } else if (newStatus.isPermanentlyDenied) {
+                debugPrint('TokenWebViewPage:Camera permission permanently denied after request');
+                if (mounted) {
+                  _showPermissionDeniedDialog();
+                }
+                return PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.DENY,
+                );
+              } else {
+                // Permission denied (but not permanently) - user can try again
+                debugPrint('TokenWebViewPage:Camera permission denied (user can try again)');
+                // On iOS, we might want to still grant to WebView as it will handle the system dialog
+                // But for now, we'll deny and let the user try again
+                return PermissionResponse(
+                  resources: request.resources,
+                  action: PermissionResponseAction.DENY,
+                );
+              }
+            }
+          }
+
+          // Grant other permissions
+          debugPrint('TokenWebViewPage:Granting other permissions: ${request.resources}');
+          return PermissionResponse(
+            resources: request.resources,
+            action: PermissionResponseAction.GRANT,
+          );
+        },
         androidOnPermissionRequest: (controller, origin, resources) async {
+          // Android-specific handler (kept for compatibility)
           debugPrint('TokenWebViewPage:androidOnPermissionRequest: $resources');
 
           // Check if camera permission is requested
-          // Resources can be: VIDEO_CAPTURE, AUDIO_CAPTURE, etc.
+          // Resources are strings: VIDEO_CAPTURE, AUDIO_CAPTURE, etc.
           final needsCamera = resources.any(
             (resource) => resource.contains('VIDEO_CAPTURE') || resource.contains('AUDIO_CAPTURE'),
           );
@@ -233,7 +304,6 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
               return PermissionRequestResponse(resources: resources, action: PermissionRequestResponseAction.GRANT);
             } else {
               // Permission not granted, request it now as fallback
-              // This handles the case where WebView requests permission before JavaScript message is received
               debugPrint('TokenWebViewPage:Camera permission not granted, requesting now');
               final newStatus = await Permission.camera.request();
               if (newStatus.isGranted) {
