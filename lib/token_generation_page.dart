@@ -22,7 +22,7 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
     'userId': 'tse1yPjNT0BDxJ7BWILo4Q==',
     'dial': '01066002669',
     'clientId': 'etisalat',
-    'secret': 'dummy',
+    'secret': 'etIsalat123',
   };
 
   @override

@@ -285,41 +285,6 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             action: PermissionResponseAction.GRANT,
           );
         },
-        androidOnPermissionRequest: (controller, origin, resources) async {
-          // Android-specific handler (kept for compatibility)
-          debugPrint('TokenWebViewPage:androidOnPermissionRequest: $resources');
-
-          // Check if camera permission is requested
-          // Resources are strings: VIDEO_CAPTURE, AUDIO_CAPTURE, etc.
-          final needsCamera = resources.any(
-            (resource) => resource.contains('VIDEO_CAPTURE') || resource.contains('AUDIO_CAPTURE'),
-          );
-
-          if (needsCamera) {
-            // Check current permission status
-            final cameraStatus = await Permission.camera.status;
-            if (cameraStatus.isGranted) {
-              // Grant the permission request
-              debugPrint('TokenWebViewPage:Granting camera permission to WebView');
-              return PermissionRequestResponse(resources: resources, action: PermissionRequestResponseAction.GRANT);
-            } else {
-              // Permission not granted, request it now as fallback
-              debugPrint('TokenWebViewPage:Camera permission not granted, requesting now');
-              final newStatus = await Permission.camera.request();
-              if (newStatus.isGranted) {
-                debugPrint('TokenWebViewPage:Camera permission granted, granting to WebView');
-                return PermissionRequestResponse(resources: resources, action: PermissionRequestResponseAction.GRANT);
-              } else {
-                debugPrint('TokenWebViewPage:Camera permission denied');
-                return PermissionRequestResponse(resources: resources, action: PermissionRequestResponseAction.DENY);
-              }
-            }
-          }
-
-          // Grant other permissions
-          debugPrint('TokenWebViewPage:Granting other permissions: $resources');
-          return PermissionRequestResponse(resources: resources, action: PermissionRequestResponseAction.GRANT);
-        },
       ),
     );
   }
