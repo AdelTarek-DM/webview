@@ -5,7 +5,14 @@ import 'package:http/http.dart' as http;
 import 'webview.dart';
 
 class TokenGenerationPage extends StatefulWidget {
-  const TokenGenerationPage({super.key});
+  const TokenGenerationPage({
+    super.key,
+    required this.dial,
+    required this.userId,
+  });
+
+  final String dial;
+  final String userId;
 
   @override
   State<TokenGenerationPage> createState() => _TokenGenerationPageState();
@@ -18,9 +25,10 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
   // API configuration
   static const String _baseUrl = 'https://dahabmasr.net/eand/api/v1/generate-webview-token';
   static const String _authToken = 'Bearer 2neaat67uh4yenevii8ixz7ac1oevwp';
-  static const Map<String, String> _requestBody = {
-    'userId': 'tse1yPjNT0BDxJ7BWILo4Q==',
-    'dial': '01066002669',
+  
+  Map<String, String> get _requestBody => {
+    'userId': widget.userId,
+    'dial': widget.dial,
     'clientId': 'etisalat',
     'secret': 'etIsalat123',
   };
@@ -52,7 +60,7 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
 
           // Navigate to webview with generated token
           if (mounted) {
-            Navigator.of(context).push(
+            Navigator.of(context).pushReplacement(
               MaterialPageRoute(
                 builder: (context) => TokenWebViewPage(appUri: appUri, userToken: token),
               ),

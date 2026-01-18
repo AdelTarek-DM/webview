@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'token_generation_page.dart';
+import 'login_page.dart';
 
 void main() {
   runApp(const PortfolioApp());
@@ -13,7 +13,7 @@ class PortfolioApp extends StatelessWidget {
     return MaterialApp(
       title: 'Your Name - Portfolio',
       debugShowCheckedModeBanner: false,
-      home: const TokenGenerationPage(),
+      home: const LoginPage(),
     );
   }
 }
