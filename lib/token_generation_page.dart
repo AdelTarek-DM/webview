@@ -5,11 +5,7 @@ import 'package:http/http.dart' as http;
 import 'webview.dart';
 
 class TokenGenerationPage extends StatefulWidget {
-  const TokenGenerationPage({
-    super.key,
-    required this.dial,
-    required this.userId,
-  });
+  const TokenGenerationPage({super.key, required this.dial, required this.userId});
 
   final String dial;
   final String userId;
@@ -25,7 +21,7 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
   // API configuration
   static const String _baseUrl = 'https://dahabmasr.net/eand/api/v1/generate-webview-token';
   static const String _authToken = 'Bearer 2neaat67uh4yenevii8ixz7ac1oevwp';
-  
+
   Map<String, String> get _requestBody => {
     'userId': widget.userId,
     'dial': widget.dial,
@@ -54,8 +50,12 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body) as Map<String, dynamic>;
 
-        if (responseData['success'] == true && responseData['token'] != null) {
-          final token = responseData['token'] as String;
+        if (responseData['success'] == true && 
+            responseData['data'] != null && 
+            responseData['data'] is Map &&
+            (responseData['data'] as Map<String, dynamic>)['accessToken'] != null) {
+          final data = responseData['data'] as Map<String, dynamic>;
+          final token = data['accessToken'] as String;
           final appUri = Uri.parse('https://dahabmasr.net');
 
           // Navigate to webview with generated token
@@ -67,8 +67,10 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
             );
           }
         } else {
+          // Check for error in response
+          final errorMessage = responseData['error'] as String?;
           setState(() {
-            _errorMessage = responseData['message'] as String? ?? 'Failed to generate token';
+            _errorMessage = errorMessage ?? 'Failed to generate token';
             _isLoading = false;
           });
         }
