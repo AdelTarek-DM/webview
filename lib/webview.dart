@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:webview/login_page.dart';
 
 class TokenWebViewPage extends StatefulWidget {
   const TokenWebViewPage({super.key, required this.appUri, required this.userToken});
@@ -14,7 +15,6 @@ class TokenWebViewPage extends StatefulWidget {
 }
 
 class _TokenWebViewPageState extends State<TokenWebViewPage> {
-  InAppWebViewController? _webViewController;
   String? _lastHeaderUrl;
   bool _cameraPermissionRequested = false;
 
@@ -113,9 +113,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           allowsInlineMediaPlayback: true,
         ),
         onWebViewCreated: (controller) {
-          _webViewController = controller;
 
-          // Add JavaScript handler to listen for camera permission requests
           controller.addJavaScriptHandler(
             handlerName: 'onCameraPermissionRequest',
             callback: (args) {
@@ -218,7 +216,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         onPermissionRequest: (controller, request) async {
           // This handler works for both iOS and Android
           debugPrint('TokenWebViewPage:onPermissionRequest: resources=${request.resources}, origin=${request.origin}');
-          
+
           // Check if camera permission is requested
           // PermissionResourceType enum values: CAMERA, MICROPHONE, etc.
           final needsCamera = request.resources.any(
@@ -231,20 +229,14 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             if (cameraStatus.isGranted) {
               // Grant the permission request
               debugPrint('TokenWebViewPage:Granting camera permission to WebView');
-              return PermissionResponse(
-                resources: request.resources,
-                action: PermissionResponseAction.GRANT,
-              );
+              return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
             } else if (cameraStatus.isPermanentlyDenied) {
               // Permission permanently denied - show dialog to open settings
               debugPrint('TokenWebViewPage:Camera permission permanently denied');
               if (mounted) {
                 _showPermissionDeniedDialog();
               }
-              return PermissionResponse(
-                resources: request.resources,
-                action: PermissionResponseAction.DENY,
-              );
+              return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
             } else {
               // Permission not granted, request it now
               // This handles the case where WebView requests permission before JavaScript message is received
@@ -252,38 +244,39 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
               final newStatus = await Permission.camera.request();
               if (newStatus.isGranted) {
                 debugPrint('TokenWebViewPage:Camera permission granted, granting to WebView');
-                return PermissionResponse(
-                  resources: request.resources,
-                  action: PermissionResponseAction.GRANT,
-                );
+                return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
               } else if (newStatus.isPermanentlyDenied) {
                 debugPrint('TokenWebViewPage:Camera permission permanently denied after request');
                 if (mounted) {
                   _showPermissionDeniedDialog();
                 }
-                return PermissionResponse(
-                  resources: request.resources,
-                  action: PermissionResponseAction.DENY,
-                );
+                return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
               } else {
                 // Permission denied (but not permanently) - user can try again
                 debugPrint('TokenWebViewPage:Camera permission denied (user can try again)');
                 // On iOS, we might want to still grant to WebView as it will handle the system dialog
                 // But for now, we'll deny and let the user try again
-                return PermissionResponse(
-                  resources: request.resources,
-                  action: PermissionResponseAction.DENY,
-                );
+                return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
               }
             }
           }
 
           // Grant other permissions
           debugPrint('TokenWebViewPage:Granting other permissions: ${request.resources}');
-          return PermissionResponse(
-            resources: request.resources,
-            action: PermissionResponseAction.GRANT,
-          );
+          return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
+        },
+        onConsoleMessage: (controller, consoleMessage) {
+          final message = consoleMessage.message;
+          debugPrint('TokenWebViewPage:onConsoleMessage: $message');
+          if (message.contains('LOGOUT_REQUEST')) {
+            debugPrint('TokenWebViewPage:Logout request detected, navigating to login');
+            if (mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginPage()),
+                (route) => false,
+              );
+            }
+          }
         },
       ),
     );
