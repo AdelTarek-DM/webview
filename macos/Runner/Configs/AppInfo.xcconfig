@@ -8,7 +8,7 @@
 PRODUCT_NAME = webview
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.webview
+PRODUCT_BUNDLE_IDENTIFIER = com.dahabmasr.webview
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
