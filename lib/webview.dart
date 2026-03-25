@@ -17,6 +17,7 @@ class TokenWebViewPage extends StatefulWidget {
 class _TokenWebViewPageState extends State<TokenWebViewPage> {
   String? _lastHeaderUrl;
   bool _cameraPermissionRequested = false;
+  bool _locationPermissionRequested = false;
 
   @override
   void initState() {
@@ -73,6 +74,35 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
     }
   }
 
+  Future<void> _requestLocationPermissionIfNeeded() async {
+    final currentStatus = await Permission.locationWhenInUse.status;
+    if (currentStatus.isGranted) {
+      debugPrint('Location permission already granted');
+      return;
+    }
+
+    if (_locationPermissionRequested && currentStatus.isDenied) {
+      debugPrint('Location permission was already requested and denied');
+      return;
+    }
+
+    _locationPermissionRequested = true;
+    debugPrint('Requesting location permission triggered by ADD_ADDRESS_REQUEST message');
+
+    final status = await Permission.locationWhenInUse.request();
+    if (status.isGranted) {
+      debugPrint('Location permission granted');
+    } else if (status.isDenied) {
+      debugPrint('Location permission denied');
+      _locationPermissionRequested = false; // allow retry later in-session
+    } else if (status.isPermanentlyDenied) {
+      debugPrint('Location permission permanently denied');
+      if (mounted) {
+        _showLocationPermissionDeniedDialog();
+      }
+    }
+  }
+
   void _showPermissionDeniedDialog() {
     showDialog(
       context: context,
@@ -80,6 +110,28 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         return AlertDialog(
           title: const Text('Camera Permission Required'),
           content: const Text('Camera permission is required to capture ID card. Please enable it in app settings.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                openAppSettings();
+              },
+              child: const Text('Open Settings'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLocationPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Location Permission Required'),
+          content: const Text('Location permission is required to add an address. Please enable it in app settings.'),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
             TextButton(
@@ -139,6 +191,33 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
               }
             },
           );
+
+          controller.addJavaScriptHandler(
+            handlerName: 'onLocationPermissionRequest',
+            callback: (args) {
+              debugPrint('TokenWebViewPage:Received JavaScript message: $args');
+              if (args.isNotEmpty) {
+                dynamic messageData = args[0];
+                Map<String, dynamic>? message;
+
+                if (messageData is Map) {
+                  message = messageData as Map<String, dynamic>;
+                } else if (messageData is String) {
+                  try {
+                    message = Map<String, dynamic>.from(jsonDecode(messageData));
+                  } catch (e) {
+                    debugPrint('TokenWebViewPage:Failed to parse message: $e');
+                  }
+                }
+
+                if (message != null &&
+                    (message['type'] == 'ADD_ADDRESS_REQUEST') &&
+                    (message['trigger'] == 'AddAddress')) {
+                  _requestLocationPermissionIfNeeded();
+                }
+              }
+            },
+          );
         },
         onLoadStop: (controller, url) async {
           // Inject JavaScript to listen for postMessage events from the web page
@@ -156,6 +235,13 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                     window.flutter_inappwebview.callHandler('onCameraPermissionRequest', event.data);
                   }
                 }
+
+                if (event.data && event.data.type === 'ADD_ADDRESS_REQUEST' && event.data.trigger === 'AddAddress') {
+                  console.log('Flutter: ADD_ADDRESS_REQUEST(AddAddress) detected in postMessage');
+                  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                    window.flutter_inappwebview.callHandler('onLocationPermissionRequest', event.data);
+                  }
+                }
               }, true);
               
               // Also listen for custom DOM events
@@ -163,6 +249,16 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                 console.log('Flutter: Received CAMERA_PERMISSION_REQUEST DOM event');
                 if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
                   window.flutter_inappwebview.callHandler('onCameraPermissionRequest', event.detail || {});
+                }
+              });
+
+              document.addEventListener('ADD_ADDRESS_REQUEST', function(event) {
+                console.log('Flutter: Received ADD_ADDRESS_REQUEST DOM event');
+                var data = (event && event.detail) ? event.detail : {};
+                if (data && data.type === 'ADD_ADDRESS_REQUEST' && data.trigger === 'AddAddress') {
+                  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                    window.flutter_inappwebview.callHandler('onLocationPermissionRequest', data);
+                  }
                 }
               });
               
