@@ -19,6 +19,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
   String? _lastHeaderUrl;
   bool _cameraPermissionRequested = false;
   InAppWebViewController? _webViewController;
+  Future<void>? _locationFlowInFlight;
 
   @override
   void initState() {
@@ -76,26 +77,42 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
   }
 
   Future<void> _requestLocationPermissionIfNeeded() async {
-    final currentStatus = await Permission.locationWhenInUse.status;
-    if (currentStatus.isGranted) {
-      debugPrint('Location permission already granted');
-      await _getAndSendCurrentLocationToWeb();
+    // Multiple triggers can arrive quickly (postMessage + console + handler call).
+    // Permission Handler does not allow concurrent requests, so serialize the flow.
+    if (_locationFlowInFlight != null) {
+      await _locationFlowInFlight;
       return;
     }
-    debugPrint('Requesting location permission triggered by ADD_ADDRESS_REQUEST message');
 
-    final status = await Permission.locationWhenInUse.request();
-    if (status.isGranted) {
-      debugPrint('Location permission granted');
-      await _getAndSendCurrentLocationToWeb();
-    } else if (status.isDenied) {
-      debugPrint('Location permission denied');
-    } else if (status.isPermanentlyDenied) {
-      debugPrint('Location permission permanently denied');
-      if (mounted) {
-        _showLocationPermissionDeniedDialog();
+    _locationFlowInFlight = () async {
+      try {
+        final currentStatus = await Permission.locationWhenInUse.status;
+        if (currentStatus.isGranted) {
+          debugPrint('Location permission already granted');
+          await _getAndSendCurrentLocationToWeb();
+          return;
+        }
+
+        debugPrint('Requesting location permission triggered by ADD_ADDRESS_REQUEST message');
+        final status = await Permission.locationWhenInUse.request();
+
+        if (status.isGranted) {
+          debugPrint('Location permission granted');
+          await _getAndSendCurrentLocationToWeb();
+        } else if (status.isDenied) {
+          debugPrint('Location permission denied');
+        } else if (status.isPermanentlyDenied) {
+          debugPrint('Location permission permanently denied');
+          if (mounted) {
+            _showLocationPermissionDeniedDialog();
+          }
+        }
+      } finally {
+        _locationFlowInFlight = null;
       }
-    }
+    }();
+
+    await _locationFlowInFlight;
   }
 
   Future<void> _getAndSendCurrentLocationToWeb() async {
@@ -111,11 +128,10 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
 
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        final requested = await Geolocator.requestPermission();
-        if (requested == LocationPermission.denied) {
-          debugPrint('Geolocator permission denied');
-          return;
-        }
+        // Permission requests are handled via permission_handler to avoid
+        // overlapping requests coming from two plugins.
+        debugPrint('Geolocator reports permission denied (will not request here)');
+        return;
       }
       if (permission == LocationPermission.deniedForever) {
         debugPrint('Geolocator permission denied forever');
