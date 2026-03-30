@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:webview/login_page.dart';
 
@@ -17,7 +18,7 @@ class TokenWebViewPage extends StatefulWidget {
 class _TokenWebViewPageState extends State<TokenWebViewPage> {
   String? _lastHeaderUrl;
   bool _cameraPermissionRequested = false;
-  bool _locationPermissionRequested = false;
+  InAppWebViewController? _webViewController;
 
   @override
   void initState() {
@@ -78,28 +79,81 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
     final currentStatus = await Permission.locationWhenInUse.status;
     if (currentStatus.isGranted) {
       debugPrint('Location permission already granted');
+      await _getAndSendCurrentLocationToWeb();
       return;
     }
-
-    if (_locationPermissionRequested && currentStatus.isDenied) {
-      debugPrint('Location permission was already requested and denied');
-      return;
-    }
-
-    _locationPermissionRequested = true;
     debugPrint('Requesting location permission triggered by ADD_ADDRESS_REQUEST message');
 
     final status = await Permission.locationWhenInUse.request();
     if (status.isGranted) {
       debugPrint('Location permission granted');
+      await _getAndSendCurrentLocationToWeb();
     } else if (status.isDenied) {
       debugPrint('Location permission denied');
-      _locationPermissionRequested = false; // allow retry later in-session
     } else if (status.isPermanentlyDenied) {
       debugPrint('Location permission permanently denied');
       if (mounted) {
         _showLocationPermissionDeniedDialog();
       }
+    }
+  }
+
+  Future<void> _getAndSendCurrentLocationToWeb() async {
+    final controller = _webViewController;
+    if (controller == null) return;
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        debugPrint('Location services are disabled');
+        return;
+      }
+
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        final requested = await Geolocator.requestPermission();
+        if (requested == LocationPermission.denied) {
+          debugPrint('Geolocator permission denied');
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint('Geolocator permission denied forever');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      final lat = position.latitude;
+      final lng = position.longitude;
+      debugPrint('Sending coordinates to web: $lat, $lng');
+
+      await controller.evaluateJavascript(
+        source: '''
+          (function() {
+            var lat = ${lat.toStringAsFixed(7)};
+            var lng = ${lng.toStringAsFixed(7)};
+            var tries = 0;
+            function send() {
+              tries++;
+              if (typeof window.setAddressCoordinatesFromFlutter === 'function') {
+                window.setAddressCoordinatesFromFlutter(lat, lng);
+                return;
+              }
+              if (tries < 25) {
+                setTimeout(send, 200);
+              }
+            }
+            send();
+          })();
+        ''',
+      );
+    } catch (e) {
+      debugPrint('Failed to get/send location: $e');
     }
   }
 
@@ -165,6 +219,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           allowsInlineMediaPlayback: true,
         ),
         onWebViewCreated: (controller) {
+          _webViewController = controller;
 
           controller.addJavaScriptHandler(
             handlerName: 'onCameraPermissionRequest',
@@ -216,6 +271,16 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                   _requestLocationPermissionIfNeeded();
                 }
               }
+            },
+          );
+
+          // Some pages may call this handler directly (observed in logs).
+          controller.addJavaScriptHandler(
+            handlerName: 'requestAddAddress',
+            callback: (args) {
+              debugPrint('TokenWebViewPage:requestAddAddress called: $args');
+              _requestLocationPermissionIfNeeded();
+              return {'ok': true};
             },
           );
         },
@@ -372,6 +437,12 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                 (route) => false,
               );
             }
+          }
+
+          // Some pages log "ADD_ADDRESS_REQUEST [object Object]" instead of postMessage.
+          // Trigger location permission from that console signal as well.
+          if (message.contains('ADD_ADDRESS_REQUEST')) {
+            _requestLocationPermissionIfNeeded();
           }
         },
       ),
