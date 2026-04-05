@@ -13,6 +13,7 @@ class _LoginPageState extends State<LoginPage> {
   final _dialController = TextEditingController();
   final _userIdController = TextEditingController();
   bool _isLoading = false;
+  String _clientLanguage = 'ar';
 
   @override
   void dispose() {
@@ -33,6 +34,7 @@ class _LoginPageState extends State<LoginPage> {
           builder: (context) => TokenGenerationPage(
             dial: _dialController.text.trim(),
             userId: _userIdController.text.trim(),
+            clientLanguage: _clientLanguage,
           ),
         ),
       ).then((_) {
@@ -90,6 +92,25 @@ class _LoginPageState extends State<LoginPage> {
                         return 'Please enter your dial number';
                       }
                       return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _clientLanguage,
+                    decoration: const InputDecoration(
+                      labelText: 'Language',
+                      prefixIcon: Icon(Icons.language),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'ar', child: Text('Arabic (ar)')),
+                      DropdownMenuItem(value: 'en', child: Text('English (en)')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _clientLanguage = value;
+                      });
                     },
                   ),
                   const SizedBox(height: 16),

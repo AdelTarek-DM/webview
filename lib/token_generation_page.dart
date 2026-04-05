@@ -5,10 +5,16 @@ import 'package:http/http.dart' as http;
 import 'webview.dart';
 
 class TokenGenerationPage extends StatefulWidget {
-  const TokenGenerationPage({super.key, required this.dial, required this.userId});
+  const TokenGenerationPage({
+    super.key,
+    required this.dial,
+    required this.userId,
+    required this.clientLanguage,
+  });
 
   final String dial;
   final String userId;
+  final String clientLanguage;
 
   @override
   State<TokenGenerationPage> createState() => _TokenGenerationPageState();
@@ -27,6 +33,7 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
     'dial': widget.dial,
     'clientId': 'etisalat',
     'secret': 'etIsalat123',
+    'clientLanguage': widget.clientLanguage,
   };
 
   @override
