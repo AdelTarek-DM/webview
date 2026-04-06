@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'login_page.dart';
+import 'app_config.dart';
 
 void main() {
+  AppConfig.validate();
   runApp(const PortfolioApp());
 }
 

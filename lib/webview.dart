@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,6 +22,14 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
   InAppWebViewController? _webViewController;
   Future<void>? _locationFlowInFlight;
 
+  bool _isAllowedWebUri(Uri uri) {
+    // Allow only HTTPS to the expected host (and subdomains).
+    if (uri.scheme != 'https') return false;
+    final host = uri.host.toLowerCase();
+    final allowedHost = widget.appUri.host.toLowerCase();
+    return host == allowedHost || host.endsWith('.$allowedHost');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -31,47 +40,34 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
     // Check current status first
     final currentStatus = await Permission.camera.status;
     if (currentStatus.isGranted) {
-      debugPrint('Camera permission already granted');
+      if (kDebugMode) debugPrint('Camera permission already granted');
       return; // Already granted, no need to request
     }
 
     if (_cameraPermissionRequested && currentStatus.isDenied) {
       // Already requested and denied, don't ask again in this session
-      debugPrint('Camera permission was already requested and denied');
+      if (kDebugMode) debugPrint('Camera permission was already requested and denied');
       return;
     }
 
     _cameraPermissionRequested = true;
-    debugPrint('Requesting camera permission triggered by CAMERA_PERMISSION_REQUEST message');
+    if (kDebugMode) {
+      debugPrint('Requesting camera permission triggered by web message');
+    }
 
     // Request camera permission
     final cameraStatus = await Permission.camera.request();
     if (cameraStatus.isGranted) {
-      debugPrint('Camera permission granted');
+      if (kDebugMode) debugPrint('Camera permission granted');
       // No need to reload, the WebView will request permission and we'll grant it
     } else if (cameraStatus.isDenied) {
-      debugPrint('Camera permission denied');
+      if (kDebugMode) debugPrint('Camera permission denied');
       _cameraPermissionRequested = false; // Allow retry on next navigation
     } else if (cameraStatus.isPermanentlyDenied) {
-      debugPrint('Camera permission permanently denied');
+      if (kDebugMode) debugPrint('Camera permission permanently denied');
       // Show dialog to open settings
       if (mounted) {
         _showPermissionDeniedDialog();
-      }
-    }
-
-    // Also request storage permissions for saving captured images
-    try {
-      final photosStatus = await Permission.photos.request();
-      if (photosStatus.isGranted) {
-        debugPrint('Photos permission granted');
-      }
-    } catch (e) {
-      debugPrint('Photos permission not available: $e');
-      try {
-        await Permission.storage.request();
-      } catch (e2) {
-        debugPrint('Storage permission request failed: $e2');
       }
     }
   }
@@ -88,21 +84,21 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
       try {
         final currentStatus = await Permission.locationWhenInUse.status;
         if (currentStatus.isGranted) {
-          debugPrint('Location permission already granted');
+          if (kDebugMode) debugPrint('Location permission already granted');
           await _getAndSendCurrentLocationToWeb();
           return;
         }
 
-        debugPrint('Requesting location permission triggered by ADD_ADDRESS_REQUEST message');
+        if (kDebugMode) debugPrint('Requesting location permission triggered by web message');
         final status = await Permission.locationWhenInUse.request();
 
         if (status.isGranted) {
-          debugPrint('Location permission granted');
+          if (kDebugMode) debugPrint('Location permission granted');
           await _getAndSendCurrentLocationToWeb();
         } else if (status.isDenied) {
-          debugPrint('Location permission denied');
+          if (kDebugMode) debugPrint('Location permission denied');
         } else if (status.isPermanentlyDenied) {
-          debugPrint('Location permission permanently denied');
+          if (kDebugMode) debugPrint('Location permission permanently denied');
           if (mounted) {
             _showLocationPermissionDeniedDialog();
           }
@@ -122,7 +118,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        debugPrint('Location services are disabled');
+        if (kDebugMode) debugPrint('Location services are disabled');
         return;
       }
 
@@ -130,11 +126,13 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
       if (permission == LocationPermission.denied) {
         // Permission requests are handled via permission_handler to avoid
         // overlapping requests coming from two plugins.
-        debugPrint('Geolocator reports permission denied (will not request here)');
+        if (kDebugMode) {
+          debugPrint('Geolocator reports permission denied (will not request here)');
+        }
         return;
       }
       if (permission == LocationPermission.deniedForever) {
-        debugPrint('Geolocator permission denied forever');
+        if (kDebugMode) debugPrint('Geolocator permission denied forever');
         return;
       }
 
@@ -146,7 +144,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
 
       final lat = position.latitude;
       final lng = position.longitude;
-      debugPrint('Sending coordinates to web: $lat, $lng');
+      if (kDebugMode) debugPrint('Sending coordinates to web');
 
       await controller.evaluateJavascript(
         source: '''
@@ -169,7 +167,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         ''',
       );
     } catch (e) {
-      debugPrint('Failed to get/send location: $e');
+      if (kDebugMode) debugPrint('Failed to get/send location: $e');
     }
   }
 
@@ -233,6 +231,17 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           javaScriptEnabled: true,
           mediaPlaybackRequiresUserGesture: false,
           allowsInlineMediaPlayback: true,
+          useShouldOverrideUrlLoading: true,
+          javaScriptCanOpenWindowsAutomatically: false,
+          supportMultipleWindows: false,
+          mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
+          thirdPartyCookiesEnabled: false,
+          cacheEnabled: false,
+          clearCache: true,
+          allowFileAccessFromFileURLs: false,
+          allowUniversalAccessFromFileURLs: false,
+          allowContentAccess: false,
+          allowFileAccess: false,
         ),
         onWebViewCreated: (controller) {
           _webViewController = controller;
@@ -240,7 +249,9 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           controller.addJavaScriptHandler(
             handlerName: 'onCameraPermissionRequest',
             callback: (args) {
-              debugPrint('TokenWebViewPage:Received JavaScript message: $args');
+              if (kDebugMode) {
+                debugPrint('TokenWebViewPage:Received camera permission request');
+              }
               if (args.isNotEmpty) {
                 // Handle both Map and direct object
                 dynamic messageData = args[0];
@@ -266,7 +277,9 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           controller.addJavaScriptHandler(
             handlerName: 'onLocationPermissionRequest',
             callback: (args) {
-              debugPrint('TokenWebViewPage:Received JavaScript message: $args');
+              if (kDebugMode) {
+                debugPrint('TokenWebViewPage:Received location permission request');
+              }
               if (args.isNotEmpty) {
                 dynamic messageData = args[0];
                 Map<String, dynamic>? message;
@@ -294,7 +307,7 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           controller.addJavaScriptHandler(
             handlerName: 'requestAddAddress',
             callback: (args) {
-              debugPrint('TokenWebViewPage:requestAddAddress called: $args');
+              if (kDebugMode) debugPrint('TokenWebViewPage:requestAddAddress called');
               _requestLocationPermissionIfNeeded();
               return {'ok': true};
             },
@@ -302,76 +315,41 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
         },
         onLoadStop: (controller, url) async {
           // Inject JavaScript to listen for postMessage events from the web page
+          // (kept intentionally minimal; avoid overriding console.*).
           await controller.evaluateJavascript(
             source: '''
             (function() {
-              console.log('Flutter: Setting up CAMERA_PERMISSION_REQUEST listener');
-              
               // Listen for postMessage events
               window.addEventListener('message', function(event) {
-                console.log('Flutter: Received postMessage:', event.data);
                 if (event.data && event.data.type === 'CAMERA_PERMISSION_REQUEST') {
-                  console.log('Flutter: CAMERA_PERMISSION_REQUEST detected in postMessage');
                   if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
                     window.flutter_inappwebview.callHandler('onCameraPermissionRequest', event.data);
                   }
                 }
 
                 if (event.data && event.data.type === 'ADD_ADDRESS_REQUEST' && event.data.trigger === 'AddAddress') {
-                  console.log('Flutter: ADD_ADDRESS_REQUEST(AddAddress) detected in postMessage');
                   if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
                     window.flutter_inappwebview.callHandler('onLocationPermissionRequest', event.data);
                   }
                 }
               }, true);
-              
-              // Also listen for custom DOM events
-              document.addEventListener('CAMERA_PERMISSION_REQUEST', function(event) {
-                console.log('Flutter: Received CAMERA_PERMISSION_REQUEST DOM event');
-                if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                  window.flutter_inappwebview.callHandler('onCameraPermissionRequest', event.detail || {});
-                }
-              });
-
-              document.addEventListener('ADD_ADDRESS_REQUEST', function(event) {
-                console.log('Flutter: Received ADD_ADDRESS_REQUEST DOM event');
-                var data = (event && event.detail) ? event.detail : {};
-                if (data && data.type === 'ADD_ADDRESS_REQUEST' && data.trigger === 'AddAddress') {
-                  if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                    window.flutter_inappwebview.callHandler('onLocationPermissionRequest', data);
-                  }
-                }
-              });
-              
-              // Override console.log to catch any CAMERA_PERMISSION_REQUEST messages
-              const originalLog = console.log;
-              console.log = function(...args) {
-                originalLog.apply(console, args);
-                const message = args.join(' ');
-                if (message.includes('CAMERA_PERMISSION_REQUEST')) {
-                  try {
-                    const data = JSON.parse(message);
-                    if (data.type === 'CAMERA_PERMISSION_REQUEST' && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                      window.flutter_inappwebview.callHandler('onCameraPermissionRequest', data);
-                    }
-                  } catch (e) {
-                    // Not JSON, ignore
-                  }
-                }
-              };
             })();
           ''',
           );
         },
         onLoadStart: (controller, url) async {
           final urlString = url.toString();
-          debugPrint('TokenWebViewPage:onLoadStart: $urlString');
+          if (kDebugMode) debugPrint('TokenWebViewPage:onLoadStart: $urlString');
 
           // Parse URI once
           final requestUri = Uri.tryParse(urlString);
+          if (requestUri == null || !_isAllowedWebUri(requestUri)) {
+            await controller.stopLoading();
+            return;
+          }
 
           // Handle navigation to same host with auth headers
-          final host = requestUri?.host;
+          final host = requestUri.host;
 
           if (host == widget.appUri.host) {
             final targetUrl = _homeUrl.toString();
@@ -379,7 +357,9 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
                 urlString.startsWith('${widget.appUri.scheme}://${widget.appUri.host}/eand/')) {
               if (_lastHeaderUrl != urlString) {
                 _lastHeaderUrl = urlString;
-                debugPrint('TokenWebViewPage:loading with auth headers: $urlString');
+                if (kDebugMode) {
+                  debugPrint('TokenWebViewPage:loading with auth headers: $urlString');
+                }
                 await controller.loadUrl(
                   urlRequest: URLRequest(
                     url: WebUri(urlString),
@@ -390,9 +370,28 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             }
           }
         },
+        shouldOverrideUrlLoading: (controller, navigationAction) async {
+          final uri = navigationAction.request.url?.uriValue;
+          if (uri == null) {
+            return NavigationActionPolicy.CANCEL;
+          }
+          if (!_isAllowedWebUri(uri)) {
+            if (kDebugMode) debugPrint('Blocked navigation to $uri');
+            return NavigationActionPolicy.CANCEL;
+          }
+          return NavigationActionPolicy.ALLOW;
+        },
+        onReceivedServerTrustAuthRequest: (controller, challenge) async {
+          // Do not allow user-provided exceptions for TLS errors.
+          return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.CANCEL);
+        },
         onPermissionRequest: (controller, request) async {
           // This handler works for both iOS and Android
-          debugPrint('TokenWebViewPage:onPermissionRequest: resources=${request.resources}, origin=${request.origin}');
+          if (kDebugMode) {
+            debugPrint(
+              'TokenWebViewPage:onPermissionRequest: resources=${request.resources}, origin=${request.origin}',
+            );
+          }
 
           // Check if camera permission is requested
           // PermissionResourceType enum values: CAMERA, MICROPHONE, etc.
@@ -405,11 +404,11 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             final cameraStatus = await Permission.camera.status;
             if (cameraStatus.isGranted) {
               // Grant the permission request
-              debugPrint('TokenWebViewPage:Granting camera permission to WebView');
+              if (kDebugMode) debugPrint('TokenWebViewPage:Granting camera permission to WebView');
               return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
             } else if (cameraStatus.isPermanentlyDenied) {
               // Permission permanently denied - show dialog to open settings
-              debugPrint('TokenWebViewPage:Camera permission permanently denied');
+              if (kDebugMode) debugPrint('TokenWebViewPage:Camera permission permanently denied');
               if (mounted) {
                 _showPermissionDeniedDialog();
               }
@@ -417,20 +416,28 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
             } else {
               // Permission not granted, request it now
               // This handles the case where WebView requests permission before JavaScript message is received
-              debugPrint('TokenWebViewPage:Camera permission not granted, requesting now');
+              if (kDebugMode) {
+                debugPrint('TokenWebViewPage:Camera permission not granted, requesting now');
+              }
               final newStatus = await Permission.camera.request();
               if (newStatus.isGranted) {
-                debugPrint('TokenWebViewPage:Camera permission granted, granting to WebView');
+                if (kDebugMode) {
+                  debugPrint('TokenWebViewPage:Camera permission granted, granting to WebView');
+                }
                 return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
               } else if (newStatus.isPermanentlyDenied) {
-                debugPrint('TokenWebViewPage:Camera permission permanently denied after request');
+                if (kDebugMode) {
+                  debugPrint('TokenWebViewPage:Camera permission permanently denied after request');
+                }
                 if (mounted) {
                   _showPermissionDeniedDialog();
                 }
                 return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
               } else {
                 // Permission denied (but not permanently) - user can try again
-                debugPrint('TokenWebViewPage:Camera permission denied (user can try again)');
+                if (kDebugMode) {
+                  debugPrint('TokenWebViewPage:Camera permission denied (user can try again)');
+                }
                 // On iOS, we might want to still grant to WebView as it will handle the system dialog
                 // But for now, we'll deny and let the user try again
                 return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
@@ -439,26 +446,22 @@ class _TokenWebViewPageState extends State<TokenWebViewPage> {
           }
 
           // Grant other permissions
-          debugPrint('TokenWebViewPage:Granting other permissions: ${request.resources}');
-          return PermissionResponse(resources: request.resources, action: PermissionResponseAction.GRANT);
+          // Restrict WebView permission grants to the minimum set required.
+          return PermissionResponse(resources: request.resources, action: PermissionResponseAction.DENY);
         },
         onConsoleMessage: (controller, consoleMessage) {
           final message = consoleMessage.message;
-          debugPrint('TokenWebViewPage:onConsoleMessage: $message');
+          if (kDebugMode) debugPrint('TokenWebViewPage:onConsoleMessage: $message');
           if (message.contains('LOGOUT_REQUEST')) {
-            debugPrint('TokenWebViewPage:Logout request detected, navigating to login');
+            if (kDebugMode) {
+              debugPrint('TokenWebViewPage:Logout request detected, navigating to login');
+            }
             if (mounted) {
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(builder: (context) => const LoginPage()),
                 (route) => false,
               );
             }
-          }
-
-          // Some pages log "ADD_ADDRESS_REQUEST [object Object]" instead of postMessage.
-          // Trigger location permission from that console signal as well.
-          if (message.contains('ADD_ADDRESS_REQUEST')) {
-            _requestLocationPermissionIfNeeded();
           }
         },
       ),

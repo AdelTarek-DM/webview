@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'webview.dart';
+import 'app_config.dart';
 
 class TokenGenerationPage extends StatefulWidget {
   const TokenGenerationPage({
@@ -24,15 +26,11 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
   bool _isLoading = true;
   String? _errorMessage;
 
-  // API configuration
-  static const String _baseUrl = 'https://dahabmasr.net/eand/api/v1/generate-webview-token';
-  static const String _authToken = 'Bearer 2neaat67uh4yenevii8ixz7ac1oevwp';
-
   Map<String, String> get _requestBody => {
     'userId': widget.userId,
     'dial': widget.dial,
-    'clientId': 'etisalat',
-    'secret': 'etIsalat123',
+    'clientId': AppConfig.clientId,
+    'secret': AppConfig.clientSecret,
     'clientLanguage': widget.clientLanguage,
   };
 
@@ -50,8 +48,11 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
 
     try {
       final response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: {'Content-Type': 'application/json', 'Authorization': _authToken},
+        Uri.parse(AppConfig.tokenApiUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': AppConfig.tokenApiAuthHeader,
+        },
         body: jsonEncode(_requestBody),
       );
       if (response.statusCode == 200) {
@@ -63,7 +64,7 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
             (responseData['data'] as Map<String, dynamic>)['accessToken'] != null) {
           final data = responseData['data'] as Map<String, dynamic>;
           final token = data['accessToken'] as String;
-          final appUri = Uri.parse('https://dahabmasr.net');
+          final appUri = Uri.parse(AppConfig.webBaseUrl);
 
           // Navigate to webview with generated token
           if (mounted) {
@@ -83,13 +84,13 @@ class _TokenGenerationPageState extends State<TokenGenerationPage> {
         }
       } else {
         setState(() {
-          _errorMessage = 'Error: ${response.statusCode} - ${response.body}';
+          _errorMessage = 'Request failed (${response.statusCode}). Please try again.';
           _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Network error: $e';
+        _errorMessage = kDebugMode ? 'Network error: $e' : 'Network error. Please try again.';
         _isLoading = false;
       });
     }
