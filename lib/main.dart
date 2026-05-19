@@ -3,7 +3,7 @@ import 'login_page.dart';
 import 'app_config.dart';
 
 void main() {
-  AppConfig.validate();
+  // AppConfig.validate();
   runApp(const PortfolioApp());
 }
 
